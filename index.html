@@ -35,7 +35,7 @@
         .table-striped tbody tr:nth-of-type(odd) {
             background-color: #f2f2f2;
         }
-        #invoicePreviewContent, #paymentPreviewContent {
+        #invoicePreviewContent, #paymentPreviewContent, #coveringLetterContent {
             padding: 20px;
             border: 1px solid #ddd;
             background-color: #fff;
@@ -72,7 +72,7 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="invoiceNo" class="form-label">Invoice No</label>
-                            <input type="text" class="form-control" id="invoiceNo" required onchange="autoFillFields()">
+                            <input type="text" class="form-control" id="invoiceNo" required>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="invoiceDate" class="form-label">Date</label>
@@ -80,7 +80,7 @@
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="invoiceMonth" class="form-label">Month</label>
-                            <select class="form-control" id="invoiceMonth" required onchange="updateDays()">
+                            <select class="form-control" id="invoiceMonth" required onchange="updateFields()">
                                 <option value="">Select Month</option>
                                 <option value="April">April (01)</option>
                                 <option value="May">May (02)</option>
@@ -178,6 +178,7 @@
                     <div class="modal-footer">
                         <button class="btn btn-primary" onclick="saveAsPDF('invoice')">Save as PDF</button>
                         <button class="btn btn-success" onclick="saveAsExcel('invoice')">Save as Excel</button>
+                        <button class="btn btn-secondary" onclick="printContent('invoice')">Print</button>
                     </div>
                 </div>
             </div>
@@ -199,13 +200,29 @@
                 </div>
             </div>
         </div>
+
+        <!-- Covering Letter Preview Modal -->
+        <div class="modal fade" id="coveringLetterModal" tabindex="-1" aria-labelledby="coveringLetterModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="coveringLetterModalLabel">Covering Letter Preview</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="coveringLetterContent"></div>
+                    <div class="modal-footer">
+                        <button class="btn btn-primary" onclick="saveAsPDF('covering')">Save as PDF</button>
+                        <button class="btn btn-secondary" onclick="printContent('covering')">Print</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
         // Initial data from the document
         let invoices = [
-            { id: 1, invoiceNo: "TSC/2024-25/01", date: "2024-05-02", month: "April", daysInMonth: 30, annualFixedCost: 241667995.10, taxableValue: 19863123, vat: 2582205.99, grossInvoice: 22445328.99 },
-            { id: 2, invoiceNo: "OPGW/2075-76/02", date: "2076-03-31", month: "Ashadh", daysInMonth: 30, annualFixedCost: 510000, taxableValue: 41917.81, vat: 5449.32, grossInvoice: 47367.13 }
+            { id: 1, invoiceNo: "TSC/2024-25/01", date: "2024-05-02", month: "April", daysInMonth: 30, annualFixedCost: 241667995.10, taxableValue: 19863123, vat: 2582205.99, grossInvoice: 22445328.99 }
         ];
         let payments = [];
         let settings = { fiscalYear: 2024, invoiceFormat: "TSC/{year}-{nextYear}/{seq}" };
@@ -240,31 +257,24 @@
             }
         }
 
-        // Auto-fill fields based on invoice number
-        function autoFillFields() {
-            const invoiceNo = document.getElementById("invoiceNo").value;
-            const match = invoiceNo.match(/(\d{4})-(\d{2})\/(\d+)/);
-            if (match) {
-                const seq = parseInt(match[3]);
-                const months = ["April", "May", "June", "July", "August", "September", "October", "November", "December", "January", "February", "March"];
-                const monthIndex = seq - 1;
-                if (monthIndex >= 0 && monthIndex < 12) {
-                    document.getElementById("invoiceMonth").value = months[monthIndex];
-                    document.getElementById("daysInMonth").value = monthDays[months[monthIndex]];
-                }
-            }
-        }
-
-        // Update days based on selected month
-        function updateDays() {
+        // Update fields based on month selection
+        function updateFields() {
             const month = document.getElementById("invoiceMonth").value;
+            const year = settings.fiscalYear;
+            const nextYear = (year + 1) % 100;
+            const monthIndex = Array.from(document.getElementById("invoiceMonth").options).findIndex(opt => opt.value === month);
+            const seq = monthIndex < 1 ? invoiceSequence : String(monthIndex).padStart(2, "0");
+            document.getElementById("invoiceNo").value = settings.invoiceFormat
+                .replace("{year}", year)
+                .replace("{nextYear}", nextYear)
+                .replace("{seq}", seq);
             document.getElementById("daysInMonth").value = monthDays[month] || "";
         }
 
         // Handle invoice form submission
         document.getElementById("invoiceForm").addEventListener("submit", (e) => {
             e.preventDefault();
-            const invoiceNo = document.getElementById("invoiceNo").value || generateInvoiceNo();
+            const invoiceNo = document.getElementById("invoiceNo").value;
             const invoiceDate = document.getElementById("invoiceDate").value;
             const invoiceMonth = document.getElementById("invoiceMonth").value;
             const daysInMonth = parseInt(document.getElementById("daysInMonth").value);
@@ -291,18 +301,6 @@
             renderInvoices();
             document.getElementById("invoiceForm").reset();
         });
-
-        // Generate invoice number
-        function generateInvoiceNo() {
-            const year = settings.fiscalYear;
-            const nextYear = (year + 1) % 100;
-            const monthIndex = Array.from(document.getElementById("invoiceMonth").options).findIndex(opt => opt.value === document.getElementById("invoiceMonth").value);
-            const seq = monthIndex < 1 ? invoiceSequence : String(monthIndex).padStart(2, "0");
-            return settings.invoiceFormat
-                .replace("{year}", year)
-                .replace("{nextYear}", nextYear)
-                .replace("{seq}", seq);
-        }
 
         // Render invoices
         function renderInvoices() {
@@ -332,6 +330,7 @@
                         <button class="btn btn-sm btn-success" onclick="openPaymentModal(${invoice.id})">Pay</button>
                         <button class="btn btn-sm btn-info" onclick="previewInvoice(${invoice.id})">Invoice Preview</button>
                         <button class="btn btn-sm btn-secondary" onclick="previewPayment(${invoice.id})">Payment Preview</button>
+                        <button class="btn btn-sm btn-primary" onclick="previewCoveringLetter(${invoice.id})">Covering Letter</button>
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -527,10 +526,92 @@
             modal.show();
         }
 
+        // Preview covering letter
+        function previewCoveringLetter(id) {
+            const invoice = invoices.find(inv => inv.id === id);
+            if (!invoice) return;
+
+            const amountWords = numberToWords(Math.floor(invoice.taxableValue));
+            const content = `
+                <div class="covering-letter">
+                    <p><strong>Our Ref No. 2080/81 -</strong> <span style="float: right;">Miti: 2081/01/20<br>Date: ${invoice.date}</span></p>
+                    <p>The Managing Director<br>Nepal Electricity Authority<br>Durbar Marg, Kathmandu<br>NEPAL</p>
+                    <p><strong>Sub:-</strong> Transmission Service Charges for Dhalkebar - Bhittamod 400 kV D/C Transmission Line (Nepal Portion of Dhalkebar - Muzaffarpur -400 kV D/C Transmission Line) – Invoice No. ${invoice.invoiceNo}</p>
+                    <p>Dear Sir,</p>
+                    <p>This has reference to the “Implementation & Transmission Service Agreement” signed between NEA & PTCN on December 13, 2011 for TLP-Nepal.</p>
+                    <p>As per Section-10 (Payment and Billing of Transmission Service Charges) of the said Agreement, we are enclosing herewith Invoice No. ${invoice.invoiceNo} dated ${invoice.date} for NRs. ${invoice.taxableValue.toLocaleString()} /- (In Words ${amountWords}) for Transmission Service Charges for the month of ${invoice.month}-2024.</p>
+                    <p>You are, therefore, requested to release the above-mentioned amount of NRs. ${invoice.taxableValue.toLocaleString()} /- in favour of PTCN at the earliest.</p>
+                    <p>Encl: as above</p>
+                    <p>Thanking you,</p>
+                    <p>Yours sincerely,</p>
+                    <br><br>
+                    <p>……………………………<br>(Santosh Phuyal)<br>Chief Finance Officer<br>Power Transmission Company Nepal Limited</p>
+                    <p><strong>Cc:</strong> DMD (Finance Directorate)<br>NEA, Durbar Marg, Kathmandu</p>
+                </div>
+            `;
+            document.getElementById("coveringLetterContent").innerHTML = content;
+            const modal = new bootstrap.Modal(document.getElementById("coveringLetterModal"));
+            modal.show();
+        }
+
+        // Convert number to words (basic implementation)
+        function numberToWords(num) {
+            const units = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
+            const teens = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+            const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+            const thousands = ["", "Thousand", "Million", "Billion"];
+
+            if (num === 0) return "Zero";
+
+            let words = [];
+            let chunkCount = 0;
+
+            while (num > 0) {
+                let chunk = num % 1000;
+                if (chunk) {
+                    let chunkWords = [];
+                    if (chunk >= 100) {
+                        chunkWords.push(units[Math.floor(chunk / 100)] + " Hundred");
+                        chunk %= 100;
+                    }
+                    if (chunk >= 20) {
+                        chunkWords.push(tens[Math.floor(chunk / 10)]);
+                        chunk %= 10;
+                    }
+                    if (chunk >= 10 && chunk < 20) {
+                        chunkWords.push(teens[chunk - 10]);
+                        chunk = 0;
+                    }
+                    if (chunk > 0) {
+                        chunkWords.push(units[chunk]);
+                    }
+                    words.unshift(chunkWords.join(" ") + " " + thousands[chunkCount]);
+                }
+                num = Math.floor(num / 1000);
+                chunkCount++;
+            }
+
+            return words.join(" ").trim() + " Only";
+        }
+
         // Save as PDF
         function saveAsPDF(type) {
-            const element = type === "invoice" ? document.getElementById("invoicePreviewContent") : document.getElementById("paymentPreviewContent");
+            const element = type === "invoice" ? document.getElementById("invoicePreviewContent") :
+                           type === "payment" ? document.getElementById("paymentPreviewContent") :
+                           document.getElementById("coveringLetterContent");
             html2pdf().from(element).save(`${type}.pdf`);
+        }
+
+        // Print content
+        function printContent(type) {
+            const element = type === "invoice" ? document.getElementById("invoicePreviewContent") :
+                           document.getElementById("coveringLetterContent");
+            const printWindow = window.open('', '', 'height=600,width=800');
+            printWindow.document.write('<html><head><title>Print</title></head><body>');
+            printWindow.document.write(element.innerHTML);
+            printWindow.document.write('</body></html>');
+            printWindow.document.close();
+            printWindow.print();
         }
 
         // Save as Excel

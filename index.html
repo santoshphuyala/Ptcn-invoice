@@ -46,18 +46,28 @@
     <div class="container my-5">
         <h1 class="text-center mb-4">Invoice Generator</h1>
 
-        <!-- Fiscal Year & Invoice Format -->
+        <!-- Settings -->
         <div class="card mb-4">
             <div class="card-header">Settings</div>
             <div class="card-body">
                 <div class="row">
-                    <div class="col-md-6 mb-3">
+                    <div class="col-md-3 mb-3">
                         <label for="fiscalYear" class="form-label">Fiscal Year (Starting April 1)</label>
                         <input type="number" class="form-control" id="fiscalYear" placeholder="e.g., 2024" value="2024">
                     </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="invoiceFormat" class="form-label">Invoice Number Format</label>
-                        <input type="text" class="form-control" id="invoiceFormat" value="TSC/{year}-{nextYear}/{seq}">
+                    <div class="col-md-3 mb-3">
+                        <label for="isLeapYear" class="form-label">Leap Year?</label>
+                        <input type="checkbox" class="form-check-input" id="isLeapYear" onchange="updateMonthDays()">
+                        <label class="form-check-label" for="isLeapYear">Yes</label>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="invoiceFormatInput" class="form-label">Add Invoice Number Format</label>
+                        <input type="text" class="form-control" id="invoiceFormatInput" placeholder="e.g., Incentive/{year}-{nextYear}/{seq}">
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="invoiceFormatSelect" class="form-label">Select Invoice Format</label>
+                        <select class="form-control" id="invoiceFormatSelect" onchange="updateInvoiceNo()">
+                        </select>
                     </div>
                 </div>
                 <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
@@ -75,8 +85,8 @@
                             <input type="text" class="form-control" id="invoiceNo" required>
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label for="invoiceDate" class="form-label">Date</label>
-                            <input type="date" class="form-control" id="invoiceDate" required>
+                            <label for="invoiceDate" class="form-label">Date (AD)</label>
+                            <input type="date" class="form-control" id="invoiceDate" required onchange="updateBSDate()">
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="invoiceMonth" class="form-label">Month</label>
@@ -220,15 +230,15 @@
     </div>
 
     <script>
-        // Initial data from the document
+        // Initial data
         let invoices = [
             { id: 1, invoiceNo: "TSC/2024-25/01", date: "2024-05-02", month: "April", daysInMonth: 30, annualFixedCost: 241667995.10, taxableValue: 19863123, vat: 2582205.99, grossInvoice: 22445328.99 }
         ];
         let payments = [];
-        let settings = { fiscalYear: 2024, invoiceFormat: "TSC/{year}-{nextYear}/{seq}" };
+        let settings = { fiscalYear: 2024, invoiceFormats: ["TSC/{year}-{nextYear}/{seq}"], selectedFormat: "TSC/{year}-{nextYear}/{seq}", isLeapYear: false };
         let invoiceSequence = invoices.length + 1;
 
-        const monthDays = {
+        let monthDays = {
             "April": 30, "May": 31, "June": 30, "July": 31, "August": 31, "September": 30,
             "October": 31, "November": 30, "December": 31, "January": 31, "February": 28, "March": 31
         };
@@ -237,13 +247,22 @@
         document.addEventListener("DOMContentLoaded", () => {
             loadSettings();
             renderInvoices();
+            updateInvoiceFormatSelect();
+            updateMonthDays();
         });
 
         // Save settings
         function saveSettings() {
             settings.fiscalYear = parseInt(document.getElementById("fiscalYear").value);
-            settings.invoiceFormat = document.getElementById("invoiceFormat").value;
+            settings.isLeapYear = document.getElementById("isLeapYear").checked;
+            const newFormat = document.getElementById("invoiceFormatInput").value;
+            if (newFormat && !settings.invoiceFormats.includes(newFormat)) {
+                settings.invoiceFormats.push(newFormat);
+            }
+            settings.selectedFormat = document.getElementById("invoiceFormatSelect").value;
             localStorage.setItem("settings", JSON.stringify(settings));
+            updateInvoiceFormatSelect();
+            updateMonthDays();
             alert("Settings saved!");
         }
 
@@ -253,8 +272,27 @@
             if (savedSettings) {
                 settings = JSON.parse(savedSettings);
                 document.getElementById("fiscalYear").value = settings.fiscalYear;
-                document.getElementById("invoiceFormat").value = settings.invoiceFormat;
+                document.getElementById("isLeapYear").checked = settings.isLeapYear;
             }
+        }
+
+        // Update month days based on leap year
+        function updateMonthDays() {
+            monthDays["February"] = settings.isLeapYear ? 29 : 28;
+            updateFields();
+        }
+
+        // Update invoice format select dropdown
+        function updateInvoiceFormatSelect() {
+            const select = document.getElementById("invoiceFormatSelect");
+            select.innerHTML = "";
+            settings.invoiceFormats.forEach(format => {
+                const option = document.createElement("option");
+                option.value = format;
+                option.text = format;
+                if (format === settings.selectedFormat) option.selected = true;
+                select.appendChild(option);
+            });
         }
 
         // Update fields based on month selection
@@ -264,11 +302,98 @@
             const nextYear = (year + 1) % 100;
             const monthIndex = Array.from(document.getElementById("invoiceMonth").options).findIndex(opt => opt.value === month);
             const seq = monthIndex < 1 ? invoiceSequence : String(monthIndex).padStart(2, "0");
-            document.getElementById("invoiceNo").value = settings.invoiceFormat
+            document.getElementById("invoiceNo").value = settings.selectedFormat
                 .replace("{year}", year)
                 .replace("{nextYear}", nextYear)
                 .replace("{seq}", seq);
             document.getElementById("daysInMonth").value = monthDays[month] || "";
+        }
+
+        // Update invoice number when format changes
+        function updateInvoiceNo() {
+            settings.selectedFormat = document.getElementById("invoiceFormatSelect").value;
+            updateFields();
+        }
+
+        // Exact AD to BS Converter
+        function adToBs(adDate) {
+            const ad = new Date(adDate);
+            const baseAD = new Date("1943-04-14"); // BS 2000-01-01
+            const daysDiff = Math.floor((ad - baseAD) / (1000 * 60 * 60 * 24));
+
+            // BS year offset table (approximate days from 1943-04-14 to BS year start)
+            const bsYearOffsets = [
+                { bsYear: 2000, days: 0 }, { bsYear: 2001, days: 365 }, { bsYear: 2002, days: 730 },
+                { bsYear: 2003, days: 1095 }, { bsYear: 2004, days: 1460 }, { bsYear: 2005, days: 1826 },
+                { bsYear: 2006, days: 2191 }, { bsYear: 2007, days: 2556 }, { bsYear: 2008, days: 2921 },
+                { bsYear: 2009, days: 3287 }, { bsYear: 2010, days: 3652 }, { bsYear: 2011, days: 4017 },
+                { bsYear: 2012, days: 4382 }, { bsYear: 2013, days: 4748 }, { bsYear: 2014, days: 5113 },
+                { bsYear: 2015, days: 5478 }, { bsYear: 2016, days: 5843 }, { bsYear: 2017, days: 6209 },
+                { bsYear: 2018, days: 6574 }, { bsYear: 2019, days: 6939 }, { bsYear: 2020, days: 7304 },
+                { bsYear: 2021, days: 7670 }, { bsYear: 2022, days: 8035 }, { bsYear: 2023, days: 8400 },
+                { bsYear: 2024, days: 8765 }, { bsYear: 2025, days: 9131 }, { bsYear: 2026, days: 9496 },
+                { bsYear: 2027, days: 9861 }, { bsYear: 2028, days: 10226 }, { bsYear: 2029, days: 10592 },
+                { bsYear: 2030, days: 10957 }, { bsYear: 2031, days: 11322 }, { bsYear: 2032, days: 11687 },
+                { bsYear: 2033, days: 12053 }, { bsYear: 2034, days: 12418 }, { bsYear: 2035, days: 12783 },
+                { bsYear: 2036, days: 13148 }, { bsYear: 2037, days: 13514 }, { bsYear: 2038, days: 13879 },
+                { bsYear: 2039, days: 14244 }, { bsYear: 2040, days: 14609 }, { bsYear: 2041, days: 14975 },
+                { bsYear: 2042, days: 15340 }, { bsYear: 2043, days: 15705 }, { bsYear: 2044, days: 16070 },
+                { bsYear: 2045, days: 16436 }, { bsYear: 2046, days: 16801 }, { bsYear: 2047, days: 17166 },
+                { bsYear: 2048, days: 17531 }, { bsYear: 2049, days: 17897 }, { bsYear: 2050, days: 18262 },
+                { bsYear: 2051, days: 18627 }, { bsYear: 2052, days: 18992 }, { bsYear: 2053, days: 19358 },
+                { bsYear: 2054, days: 19723 }, { bsYear: 2055, days: 20088 }, { bsYear: 2056, days: 20453 },
+                { bsYear: 2057, days: 20819 }, { bsYear: 2058, days: 21184 }, { bsYear: 2059, days: 21549 },
+                { bsYear: 2060, days: 21914 }, { bsYear: 2061, days: 22280 }, { bsYear: 2062, days: 22645 },
+                { bsYear: 2063, days: 23010 }, { bsYear: 2064, days: 23375 }, { bsYear: 2065, days: 23741 },
+                { bsYear: 2066, days: 24106 }, { bsYear: 2067, days: 24471 }, { bsYear: 2068, days: 24836 },
+                { bsYear: 2069, days: 25202 }, { bsYear: 2070, days: 25567 }, { bsYear: 2071, days: 25932 },
+                { bsYear: 2072, days: 26297 }, { bsYear: 2073, days: 26663 }, { bsYear: 2074, days: 27028 },
+                { bsYear: 2075, days: 27393 }, { bsYear: 2076, days: 27758 }, { bsYear: 2077, days: 28124 },
+                { bsYear: 2078, days: 28489 }, { bsYear: 2079, days: 28854 }, { bsYear: 2080, days: 29219 },
+                { bsYear: 2081, days: 29585 }, { bsYear: 2082, days: 29950 }, { bsYear: 2083, days: 30315 },
+                { bsYear: 2084, days: 30680 }, { bsYear: 2085, days: 31046 }
+            ];
+
+            let bsYear, remainingDays;
+            for (let i = 0; i < bsYearOffsets.length - 1; i++) {
+                if (daysDiff >= bsYearOffsets[i].days && daysDiff < bsYearOffsets[i + 1].days) {
+                    bsYear = bsYearOffsets[i].bsYear;
+                    remainingDays = daysDiff - bsYearOffsets[i].days;
+                    break;
+                }
+            }
+            if (!bsYear) {
+                bsYear = bsYearOffsets[bsYearOffsets.length - 1].bsYear;
+                remainingDays = daysDiff - bsYearOffsets[bsYearOffsets.length - 1].days;
+            }
+
+            const bsMonths = [
+                30, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30 // Baishakh to Chaitra
+            ];
+            if (bsYear % 4 === 2) bsMonths[7] = 30; // Adjust for BS leap year (e.g., 2078)
+
+            let bsMonth = 1;
+            let bsDay = 1;
+            for (let i = 0; i < 12 && remainingDays >= 0; i++) {
+                if (remainingDays >= bsMonths[i]) {
+                    remainingDays -= bsMonths[i];
+                    bsMonth++;
+                } else {
+                    bsDay += remainingDays;
+                    remainingDays = -1;
+                }
+            }
+
+            return `${bsYear}/${String(bsMonth).padStart(2, "0")}/${String(bsDay).padStart(2, "0")}`;
+        }
+
+        // Update BS date based on AD date
+        function updateBSDate() {
+            const adDate = document.getElementById("invoiceDate").value;
+            if (adDate) {
+                const bsDate = adToBs(adDate);
+                document.getElementById("invoiceDate").dataset.bsDate = bsDate;
+            }
         }
 
         // Handle invoice form submission
@@ -531,16 +656,17 @@
             const invoice = invoices.find(inv => inv.id === id);
             if (!invoice) return;
 
-            const amountWords = numberToWords(Math.floor(invoice.taxableValue));
+            const amountWords = numberToWords(invoice.grossInvoice);
+            const bsDate = adToBs(invoice.date);
             const content = `
                 <div class="covering-letter">
-                    <p><strong>Our Ref No. 2080/81 -</strong> <span style="float: right;">Miti: 2081/01/20<br>Date: ${invoice.date}</span></p>
+                    <p><strong>Our Ref No. 2080/81 -</strong> <span style="float: right;">Miti: ${bsDate}<br>Date: ${invoice.date}</span></p>
                     <p>The Managing Director<br>Nepal Electricity Authority<br>Durbar Marg, Kathmandu<br>NEPAL</p>
                     <p><strong>Sub:-</strong> Transmission Service Charges for Dhalkebar - Bhittamod 400 kV D/C Transmission Line (Nepal Portion of Dhalkebar - Muzaffarpur -400 kV D/C Transmission Line) – Invoice No. ${invoice.invoiceNo}</p>
                     <p>Dear Sir,</p>
                     <p>This has reference to the “Implementation & Transmission Service Agreement” signed between NEA & PTCN on December 13, 2011 for TLP-Nepal.</p>
-                    <p>As per Section-10 (Payment and Billing of Transmission Service Charges) of the said Agreement, we are enclosing herewith Invoice No. ${invoice.invoiceNo} dated ${invoice.date} for NRs. ${invoice.taxableValue.toLocaleString()} /- (In Words ${amountWords}) for Transmission Service Charges for the month of ${invoice.month}-2024.</p>
-                    <p>You are, therefore, requested to release the above-mentioned amount of NRs. ${invoice.taxableValue.toLocaleString()} /- in favour of PTCN at the earliest.</p>
+                    <p>As per Section-10 (Payment and Billing of Transmission Service Charges) of the said Agreement, we are enclosing herewith Invoice No. ${invoice.invoiceNo} dated ${invoice.date} for NRs. ${invoice.grossInvoice.toLocaleString()} /- (In Words ${amountWords}) for Transmission Service Charges for the month of ${invoice.month}-2024.</p>
+                    <p>You are, therefore, requested to release the above-mentioned amount of NRs. ${invoice.grossInvoice.toLocaleString()} /- in favour of PTCN at the earliest.</p>
                     <p>Encl: as above</p>
                     <p>Thanking you,</p>
                     <p>Yours sincerely,</p>
@@ -554,44 +680,72 @@
             modal.show();
         }
 
-        // Convert number to words (basic implementation)
+        // Number to words with high precision
         function numberToWords(num) {
             const units = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
             const teens = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
             const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
-            const thousands = ["", "Thousand", "Million", "Billion"];
+            const thousands = ["", "Thousand", "Million", "Billion", "Trillion"];
 
-            if (num === 0) return "Zero";
+            const integerPart = Math.floor(num);
+            const decimalPart = Math.round((num - integerPart) * 10000); // Up to 4 decimal places
 
-            let words = [];
-            let chunkCount = 0;
-
-            while (num > 0) {
-                let chunk = num % 1000;
-                if (chunk) {
-                    let chunkWords = [];
-                    if (chunk >= 100) {
-                        chunkWords.push(units[Math.floor(chunk / 100)] + " Hundred");
-                        chunk %= 100;
+            let integerWords = [];
+            if (integerPart === 0) {
+                integerWords.push("Zero");
+            } else {
+                let tempNum = integerPart;
+                let chunkCount = 0;
+                while (tempNum > 0) {
+                    let chunk = tempNum % 1000;
+                    if (chunk) {
+                        let chunkWords = [];
+                        if (chunk >= 100) {
+                            chunkWords.push(units[Math.floor(chunk / 100)] + " Hundred");
+                            chunk %= 100;
+                        }
+                        if (chunk >= 20) {
+                            chunkWords.push(tens[Math.floor(chunk / 10)]);
+                            chunk %= 10;
+                        }
+                        if (chunk >= 10 && chunk < 20) {
+                            chunkWords.push(teens[chunk - 10]);
+                            chunk = 0;
+                        }
+                        if (chunk > 0) {
+                            chunkWords.push(units[chunk]);
+                        }
+                        integerWords.unshift(chunkWords.join(" ") + " " + thousands[chunkCount]);
                     }
-                    if (chunk >= 20) {
-                        chunkWords.push(tens[Math.floor(chunk / 10)]);
-                        chunk %= 10;
-                    }
-                    if (chunk >= 10 && chunk < 20) {
-                        chunkWords.push(teens[chunk - 10]);
-                        chunk = 0;
-                    }
-                    if (chunk > 0) {
-                        chunkWords.push(units[chunk]);
-                    }
-                    words.unshift(chunkWords.join(" ") + " " + thousands[chunkCount]);
+                    tempNum = Math.floor(tempNum / 1000);
+                    chunkCount++;
                 }
-                num = Math.floor(num / 1000);
-                chunkCount++;
             }
 
-            return words.join(" ").trim() + " Only";
+            let words = integerWords.join(" ").trim() + " Rupees";
+            if (decimalPart > 0) {
+                let decimalWords = [];
+                let tempDecimal = decimalPart;
+                for (let i = 0; i < 4 && tempDecimal > 0; i++) {
+                    let digit = Math.floor(tempDecimal / Math.pow(10, 3 - i));
+                    if (digit > 0) {
+                        if (digit >= 20) {
+                            decimalWords.push(tens[Math.floor(digit / 10)]);
+                            digit %= 10;
+                        }
+                        if (digit >= 10 && digit < 20) {
+                            decimalWords.push(teens[digit - 10]);
+                            digit = 0;
+                        }
+                        if (digit > 0) {
+                            decimalWords.push(units[digit]);
+                        }
+                    }
+                    tempDecimal = tempDecimal % Math.pow(10, 3 - i);
+                }
+                words += " and " + decimalWords.join(" ") + " Paisa";
+            }
+            return words + " Only";
         }
 
         // Save as PDF
@@ -677,6 +831,8 @@
                     invoiceSequence = data.invoiceSequence || invoices.length + 1;
                     localStorage.setItem("settings", JSON.stringify(settings));
                     renderInvoices();
+                    updateInvoiceFormatSelect();
+                    updateMonthDays();
                     alert("Data restored successfully!");
                 };
                 reader.readAsText(file);
